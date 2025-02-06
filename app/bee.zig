@@ -6,7 +6,7 @@ const Value = union(enum) {
     string: []const u8,
     int: i64,
     list: std.ArrayList(Value),
-    dict: std.StringHashMap(Value),
+    dict: std.StringArrayHashMap(Value),
     end,
 
     pub fn deinit(self: Self) void {
@@ -14,6 +14,12 @@ const Value = union(enum) {
             .list => |l| {
                 for (l.items) |i| i.deinit();
                 l.deinit();
+            },
+            .dict => |d| {
+                var it = d.iterator();
+                while (it.next()) |kv| kv.value_ptr.*.deinit();
+                var d_mut = d;
+                d_mut.deinit();
             },
             else => {},
         }
@@ -30,6 +36,20 @@ const Value = union(enum) {
                     if (i < l.items.len - 1) try writer.print(",", .{});
                 }
                 try writer.print("]", .{});
+            },
+            .dict => |d| {
+                try writer.print("{{", .{});
+                var it = d.iterator();
+                var first = true;
+                while (it.next()) |kv| {
+                    if (!first) try writer.print(",", .{});
+                    first = false;
+                    const k = Value{ .string = kv.key_ptr.* };
+                    try k.dump(writer);
+                    try writer.print(":", .{});
+                    try kv.value_ptr.*.dump(writer);
+                }
+                try writer.print("}}", .{});
             },
             else => unreachable,
         }
@@ -54,8 +74,12 @@ pub fn decode(allocator: std.mem.Allocator, bencode: []const u8) anyerror!Bee {
         '0'...'9' => try decodeString(bencode),
         'i' => try decodeInt(bencode),
         'l' => try decodeList(allocator, bencode),
+        'd' => try decodeDict(allocator, bencode),
         'e' => .{ .value = .end, .read = 1 },
-        else => unreachable,
+        else => {
+            std.debug.print("\ninvalid bencode start: {s}\n", .{bencode});
+            unreachable;
+        },
     };
 }
 
@@ -82,6 +106,19 @@ inline fn decodeList(allocator: std.mem.Allocator, bencode: []const u8) !Bee {
     return .{ .allocator = allocator, .value = .{ .list = list }, .read = read + 1 };
 }
 
+inline fn decodeDict(allocator: std.mem.Allocator, bencode: []const u8) !Bee {
+    var dict = std.StringArrayHashMap(Value).init(allocator);
+    var read: usize = 1;
+    var key = try decode(allocator, bencode[1..]);
+    while (key.value != .end) : (key = try decode(allocator, bencode[read..])) {
+        read += key.read;
+        const value = try decode(allocator, bencode[read..]);
+        read += value.read;
+        try dict.put(key.value.string, value.value);
+    }
+    return .{ .allocator = allocator, .value = .{ .dict = dict }, .read = read + 1 };
+}
+
 // ############## TESTS ################
 const testing = std.testing;
 const tally = testing.allocator;
@@ -97,13 +134,13 @@ test "decode string empty" {
     try testing.expectEqualStrings("", actual.value.string);
 }
 
-test "decode integer" {
+test "decode int" {
     const actual = try decode(tally, "i32e");
     defer actual.deinit();
     try testing.expect(32 == actual.value.int);
 }
 
-test "decode integer negative" {
+test "decode int negative" {
     const actual = try decode(tally, "i-98e");
     defer actual.deinit();
     try testing.expect(-98 == actual.value.int);
@@ -144,4 +181,52 @@ test "decode list nested" {
     defer actual.deinit();
 
     try testing.expectEqualDeep(expected, actual.value.list);
+}
+
+test "dump string" {
+    const actual = try decode(tally, "5:hello");
+    defer actual.deinit();
+
+    var buf: [7]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    const writer = fbs.writer();
+    try actual.value.dump(writer);
+
+    try testing.expectEqualStrings("\"hello\"", &buf);
+}
+
+test "dump int" {
+    const actual = try decode(tally, "i52e");
+    defer actual.deinit();
+
+    var buf: [2]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    const writer = fbs.writer();
+    try actual.value.dump(writer);
+
+    try testing.expectEqualStrings("52", &buf);
+}
+
+test "dump list" {
+    const actual = try decode(tally, "l5:helloi52ee");
+    defer actual.deinit();
+
+    var buf: [12]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    const writer = fbs.writer();
+    try actual.value.dump(writer);
+
+    try testing.expectEqualStrings("[\"hello\",52]", &buf);
+}
+
+test "dump dictionary" {
+    const actual = try decode(tally, "d3:foo3:bar5:helloi52ee");
+    defer actual.deinit();
+
+    var buf: [24]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    const writer = fbs.writer();
+    try actual.value.dump(writer);
+
+    try testing.expectEqualStrings("{\"foo\":\"bar\",\"hello\":52}", &buf);
 }
