@@ -1,8 +1,10 @@
 const std = @import("std");
 const bee = @import("bee.zig");
+const tor = @import("tor.zig");
 
 const Command = enum {
     decode,
+    info,
 };
 
 pub fn main() !void {
@@ -27,6 +29,12 @@ pub fn main() !void {
             defer decoded.deinit();
             try decoded.value.dump(stdout);
             try stdout.print("\n", .{});
+        },
+        .info => {
+            const torrent = try tor.init(allocator, args[2]);
+            defer torrent.deinit();
+            try stdout.print("Tracker URL: {s}\n", .{torrent.announce});
+            try stdout.print("Lenght: {d}\n", .{torrent.info.length});
         },
     }
 }
