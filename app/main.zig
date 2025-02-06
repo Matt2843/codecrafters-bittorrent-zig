@@ -1,10 +1,12 @@
 const std = @import("std");
 const bee = @import("bee.zig");
 const tor = @import("tor.zig");
+const BitTorrentClient = @import("client.zig");
 
 const Command = enum {
     decode,
     info,
+    peers,
 };
 
 pub fn main() !void {
@@ -34,6 +36,15 @@ pub fn main() !void {
             const torrent = try tor.init(allocator, args[2]);
             defer torrent.deinit();
             try torrent.dump(stdout);
+        },
+        .peers => {
+            const torrent = try tor.init(allocator, args[2]);
+            defer torrent.deinit();
+            const client = try BitTorrentClient.init(allocator, torrent);
+            defer client.deinit();
+            for (client.peers) |p| {
+                try stdout.print("{any}\n", .{p});
+            }
         },
     }
 }
