@@ -34,7 +34,7 @@ pub fn main() !void {
             const torrent = try tor.init(allocator, args[2]);
             defer torrent.deinit();
             try stdout.print("Tracker URL: {s}\n", .{torrent.announce});
-            try stdout.print("Lenght: {d}\n", .{torrent.info.length});
+            try stdout.print("Length: {d}\n", .{torrent.info.length});
         },
     }
 }
