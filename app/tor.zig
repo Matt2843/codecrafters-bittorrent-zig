@@ -32,7 +32,28 @@ pub fn deinit(self: Self) void {
     self.allocator.free(self.bytes);
 }
 
-const Info = struct { length: usize, name: []const u8, piece_length: usize, pieces: []const u8 };
+const Info = struct {
+    length: usize,
+    name: []const u8,
+    piece_length: usize,
+    pieces: []const u8,
+
+    pub fn pieceHashes(self: Info, writer: anytype) !void {
+        var pieces_window = std.mem.window(u8, self.pieces, 20, 20);
+        while (pieces_window.next()) |piece| {
+            try writer.print("{s}\n", .{std.fmt.fmtSliceHexLower(piece)});
+        }
+    }
+};
+
+pub fn dump(self: Self, writer: anytype) !void {
+    try writer.print("Tracker URL: {s}\n", .{self.announce});
+    try writer.print("Length: {d}\n", .{self.info.length});
+    try writer.print("Info Hash: {s}\n", .{std.fmt.fmtSliceHexLower(&self.info_hash)});
+    try writer.print("Piece Length: {d}\n", .{self.info.piece_length});
+    try writer.print("Piece Hashes:\n", .{});
+    try self.info.pieceHashes(writer);
+}
 
 // ############## TESTS ################
 const testing = std.testing;
