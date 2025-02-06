@@ -23,8 +23,10 @@ pub fn main() !void {
 
     switch (command) {
         .decode => {
-            const decoded = try bee.decode(args[2]);
-            try decoded.dump(stdout);
+            const decoded = try bee.decode(allocator, args[2]);
+            defer decoded.deinit();
+            try decoded.value.dump(stdout);
+            try stdout.print("\n", .{});
         },
     }
 }
