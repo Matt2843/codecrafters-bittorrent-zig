@@ -6,6 +6,8 @@ zig-out/
 # Compiled binary output
 bin/
 !bin/.gitkeep
+main.exe*
+main.pdb
 
 # Ignore any .o or .h files generated during build
 *.o
