@@ -7,6 +7,7 @@ bytes: []u8,
 
 announce: []const u8,
 info: Info,
+info_hash: [std.crypto.hash.Sha1.digest_length]u8,
 
 pub fn init(allocator: std.mem.Allocator, rel_path: []const u8) !Self {
     const bytes = try std.fs.cwd().readFileAlloc(allocator, rel_path, comptime 10 * 1024 * 1024);
@@ -15,13 +16,16 @@ pub fn init(allocator: std.mem.Allocator, rel_path: []const u8) !Self {
     const dict = decoded.value.dict;
 
     const announce = dict.get("announce").?.string;
-    const info_dict = dict.get("info").?.dict;
-    return .{ .allocator = allocator, .bytes = bytes, .announce = announce, .info = .{
-        .length = @intCast(info_dict.get("length").?.int),
-        .name = info_dict.get("name").?.string,
-        .piece_length = @intCast(info_dict.get("piece length").?.int),
-        .pieces = info_dict.get("pieces").?.string,
-    } };
+    const info = dict.get("info").?;
+
+    var str = std.ArrayList(u8).init(allocator);
+    defer str.deinit();
+    try info.encode(str.writer());
+
+    var info_hash = std.crypto.hash.Sha1.init(.{});
+    info_hash.update(str.items);
+
+    return .{ .allocator = allocator, .bytes = bytes, .announce = announce, .info = .{ .length = @intCast(info.dict.get("length").?.int), .name = info.dict.get("name").?.string, .piece_length = @intCast(info.dict.get("piece length").?.int), .pieces = info.dict.get("pieces").?.string }, .info_hash = info_hash.finalResult() };
 }
 
 pub fn deinit(self: Self) void {

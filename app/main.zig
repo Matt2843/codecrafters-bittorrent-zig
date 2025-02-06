@@ -35,6 +35,7 @@ pub fn main() !void {
             defer torrent.deinit();
             try stdout.print("Tracker URL: {s}\n", .{torrent.announce});
             try stdout.print("Length: {d}\n", .{torrent.info.length});
+            try stdout.print("Info Hash: {s}\n", .{std.fmt.fmtSliceHexLower(&torrent.info_hash)});
         },
     }
 }
