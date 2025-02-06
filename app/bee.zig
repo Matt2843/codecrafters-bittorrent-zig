@@ -9,6 +9,28 @@ const Value = union(enum) {
     dict: std.StringArrayHashMap(Value),
     end,
 
+    pub fn encode(self: Self, writer: anytype) !void {
+        return switch (self) {
+            .string => |s| try writer.print("{d}:{s}", .{ s.len, s }),
+            .int => |i| try writer.print("i{d}e", .{i}),
+            .list => |l| {
+                try writer.print("l", .{});
+                for (l.items) |i| try encode(i, writer);
+                try writer.print("e", .{});
+            },
+            .dict => |d| {
+                try writer.print("d", .{});
+                var it = d.iterator();
+                while (it.next()) |kv| {
+                    try encode(.{ .string = kv.key_ptr.* }, writer);
+                    try encode(kv.value_ptr.*, writer);
+                }
+                try writer.print("e", .{});
+            },
+            .end => unreachable,
+        };
+    }
+
     pub fn deinit(self: Self) void {
         switch (self) {
             .list => |l| {
@@ -181,6 +203,61 @@ test "decode list nested" {
     defer actual.deinit();
 
     try testing.expectEqualDeep(expected, actual.value.list);
+}
+
+test "encode string" {
+    const actual = Value{ .string = "hello" };
+    defer actual.deinit();
+
+    var buf: [7]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    const writer = fbs.writer();
+    try actual.encode(writer);
+
+    try testing.expectEqualStrings("5:hello", &buf);
+}
+
+test "encode int" {
+    const actual = Value{ .int = 52 };
+    defer actual.deinit();
+
+    var buf: [4]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    const writer = fbs.writer();
+    try actual.encode(writer);
+
+    try testing.expectEqualStrings("i52e", &buf);
+}
+
+test "encode list" {
+    var list = std.ArrayList(Value).init(tally);
+    defer list.deinit();
+    try list.append(.{ .int = 52 });
+    try list.append(.{ .string = "hello" });
+    try list.append(.{ .string = "zig" });
+    const actual = Value{ .list = list };
+
+    var buf: [18]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    const writer = fbs.writer();
+    try actual.encode(writer);
+
+    try testing.expectEqualStrings("li52e5:hello3:zige", &buf);
+}
+
+test "encode dict" {
+    var dict = std.StringArrayHashMap(Value).init(tally);
+    defer dict.deinit();
+    try dict.put("zig", .{ .int = 52 });
+    try dict.put("world", .{ .string = "hello" });
+    const actual = Value{ .dict = dict };
+
+    var buf: [25]u8 = undefined;
+    var fbs = std.io.fixedBufferStream(&buf);
+    const writer = fbs.writer();
+    try actual.encode(writer);
+
+    try testing.expectEqualStrings("d3:zigi52e5:world5:helloe", &buf);
 }
 
 test "dump string" {
