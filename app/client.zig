@@ -257,10 +257,10 @@ fn discoverPeers(allocator: std.mem.Allocator, peer_id: [20]u8, torrent: Torrent
     try request.finish();
     try request.wait();
 
-    var body: [100 * 1024 * 1024]u8 = undefined; // 100 MiB
-    const read = try request.readAll(&body);
+    const body = try request.reader().readAllAlloc(allocator, comptime 100 * 1024 * 1024);
+    defer allocator.free(body);
 
-    var decoded = try bee.decode(allocator, body[0..read]);
+    var decoded = try bee.decode(allocator, body);
     defer decoded.deinit();
 
     var peers_arr = std.ArrayList(std.net.Address).init(allocator);
