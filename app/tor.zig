@@ -3,6 +3,7 @@ const bee = @import("bee.zig");
 const Self = @This();
 
 allocator: std.mem.Allocator,
+info_hash_raw: std.ArrayList(u8),
 bytes: []u8,
 
 announce: []const u8,
@@ -18,12 +19,11 @@ pub fn init(allocator: std.mem.Allocator, rel_path: []const u8) !Self {
     const announce = dict.get("announce").?.string;
     const info = dict.get("info").?;
 
-    var str = std.ArrayList(u8).init(allocator);
-    defer str.deinit();
-    try info.encode(str.writer());
+    var info_hash_raw = std.ArrayList(u8).init(allocator);
+    try info.encode(info_hash_raw.writer());
 
     var info_hash = std.crypto.hash.Sha1.init(.{});
-    info_hash.update(str.items);
+    info_hash.update(info_hash_raw.items);
 
     const pieces = info.dict.get("pieces").?.string;
     var piece_hashes = std.ArrayList([]const u8).init(allocator);
@@ -33,6 +33,7 @@ pub fn init(allocator: std.mem.Allocator, rel_path: []const u8) !Self {
     }
     return .{
         .allocator = allocator,
+        .info_hash_raw = info_hash_raw,
         .bytes = bytes,
         .announce = announce,
         .info = .{
@@ -49,6 +50,7 @@ pub fn init(allocator: std.mem.Allocator, rel_path: []const u8) !Self {
 pub fn deinit(self: Self) void {
     self.allocator.free(self.bytes);
     self.allocator.free(self.info.piece_hashes);
+    self.info_hash_raw.deinit();
 }
 
 const Info = struct {

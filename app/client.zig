@@ -97,7 +97,7 @@ pub fn downloadPiece(self: Self, index: i32, rel_out: []const u8) !void {
     const digest = info_hash.finalResult();
     std.debug.assert(std.mem.eql(u8, &digest, self.torrent.info.piece_hashes[@intCast(index)]));
 
-    const slash = if (std.mem.endsWith(u8, rel_out, "/")) "/" else "";
+    const slash = if (std.mem.endsWith(u8, rel_out, "/")) "" else "/";
     const path = try std.mem.concat(self.allocator, u8, &[_][]const u8{ rel_out, slash, self.torrent.info.name });
     std.debug.print("saving to path: {s}\n", .{path});
     defer self.allocator.free(path);
