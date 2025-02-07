@@ -257,7 +257,7 @@ fn discoverPeers(allocator: std.mem.Allocator, peer_id: [20]u8, torrent: Torrent
     try request.finish();
     try request.wait();
 
-    var body: [10 * 1024 * 1024]u8 = undefined; // 10 MiB
+    var body: [100 * 1024 * 1024]u8 = undefined; // 100 MiB
     const read = try request.readAll(&body);
 
     var decoded = try bee.decode(allocator, body[0..read]);
