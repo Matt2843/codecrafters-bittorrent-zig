@@ -263,6 +263,10 @@ fn discoverPeers(allocator: std.mem.Allocator, peer_id: [20]u8, torrent: Torrent
     var decoded = try bee.decode(allocator, body);
     defer decoded.deinit();
 
+    const stdout = std.io.getStdOut().writer();
+    try decoded.value.dump(stdout);
+    try stdout.print("\n", .{});
+
     var peers_arr = std.ArrayList(std.net.Address).init(allocator);
     const peers_raw = decoded.value.dict.get("peers").?.string;
     var peers_window_it = std.mem.window(u8, peers_raw, 6, 6);
