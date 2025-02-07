@@ -6,7 +6,7 @@ const Self = @This();
 
 allocator: std.mem.Allocator,
 
-torrent: Torrent,
+torrent: Torrent, // TODO: remove later..
 peer_id: [20]u8,
 peers: []std.net.Address,
 
@@ -25,13 +25,70 @@ pub fn deinit(self: Self) void {
     self.allocator.free(self.peers);
 }
 
-pub fn handshake(self: Self, peer: std.net.Address, writer: anytype) !std.net.Stream {
+pub fn downloadPiece(self: Self, index: u32) !void {
+    _ = index;
+    const peer = self.peers[0];
+    const hs = try self.handshake(peer);
+
+    const response = PeerMessage.receive(self.allocator, hs.connection);
+    std.debug.print("{any}\n", .{response});
+}
+
+const PeerMessageType = enum(u8) {
+    choke = 0,
+    unchoke = 1,
+    interested = 2,
+    not_interested = 3,
+    have = 4,
+    bitfield = 5,
+    request = 6,
+    piece = 7,
+    cancel = 8,
+};
+
+const PeerMessagePayload = union(PeerMessageType) {
+    choke: void,
+    unchoke: void,
+    interested: void,
+    not_interested: void,
+    have: u32,
+    bitfield: []u8,
+    request: RequestPayload,
+    piece: PiecePayload,
+    cancel: RequestPayload,
+};
+
+const RequestPayload = extern struct {
+    index: i32,
+    begin: i32,
+    lenght: i32,
+};
+
+const PiecePayload = struct { index: i32, begin: i32, block: []u8 };
+
+const PeerMessage = struct {
+    message_length: u32,
+    message_type: PeerMessageType,
+    payload: PeerMessagePayload,
+
+    fn receive(_: std.mem.Allocator, connection: std.net.Stream) !PeerMessage {
+        const reader = connection.reader();
+        const message_length = try reader.readInt(u32, .big);
+        const message_type = try reader.readEnum(PeerMessageType, .big);
+        return PeerMessage{
+            .message_length = message_length,
+            .message_type = message_type,
+            .payload = undefined,
+        };
+    }
+};
+
+pub fn handshake(self: Self, peer: std.net.Address) !struct { connection: std.net.Stream, peer_id: [20]u8 } {
     const connection = try std.net.tcpConnectToAddress(peer);
     const shake = Handshake{ .info_hash = self.torrent.info_hash, .peer_id = self.peer_id };
     try connection.writer().writeStruct(shake);
     const response = try connection.reader().readStruct(Handshake);
-    try writer.print("Peer ID: {s}\n", .{std.fmt.fmtSliceHexLower(&response.peer_id)});
-    return connection;
+    return .{ .connection = connection, .peer_id = response.peer_id };
 }
 
 const Handshake = extern struct {
@@ -59,7 +116,7 @@ fn discoverPeers(allocator: std.mem.Allocator, peer_id: [20]u8, torrent: Torrent
     try request.finish();
     try request.wait();
 
-    var body: [10 * 1024 * 1024]u8 = undefined;
+    var body: [10 * 1024 * 1024]u8 = undefined; // 10 MiB
     const read = try request.readAll(&body);
 
     var decoded = try bee.decode(allocator, body[0..read]);
@@ -69,7 +126,6 @@ fn discoverPeers(allocator: std.mem.Allocator, peer_id: [20]u8, torrent: Torrent
     const peers_raw = decoded.value.dict.get("peers").?.string;
     var peers_window_it = std.mem.window(u8, peers_raw, 6, 6);
     while (peers_window_it.next()) |peer_raw| {
-        //Each peer is represented using 6 bytes. The first 4 bytes are the peer's IP address and the last 2 bytes are the peer's port number.
         var ip4: [4]u8 = undefined;
         @memcpy(ip4[0..], peer_raw[0..4]);
         const port = std.mem.readInt(u16, peer_raw[4..6], .big);
