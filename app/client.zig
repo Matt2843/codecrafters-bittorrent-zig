@@ -26,6 +26,8 @@ pub fn deinit(self: Self) void {
 }
 
 pub fn downloadPiece(self: Self, index: i32, rel_out: []const u8) !void {
+    if (index >= self.torrent.info.piece_hashes.len) return;
+
     const peer = self.peers[0];
     const hs = try self.handshake(peer);
     //  Wait for a bitfield message from the peer indicating which pieces it has
@@ -63,8 +65,14 @@ pub fn downloadPiece(self: Self, index: i32, rel_out: []const u8) !void {
     //          block: the data for the piece, usually 2^14 bytes long
     const k16: i32 = 16 * 1024;
     var begin: i32 = 0;
-    var left: i32 = @intCast(self.torrent.info.piece_length);
-    var piece_buf = try self.allocator.alloc(u8, self.torrent.info.piece_length);
+
+    const index_usize: usize = @intCast(index);
+    const max_piece_length: usize = @intCast(self.torrent.info.piece_length);
+    const min_piece_length: usize = @intCast(self.torrent.info.length % self.torrent.info.piece_length);
+    const piece_length: usize = if (index_usize == self.torrent.info.piece_hashes.len - 1) min_piece_length else max_piece_length;
+
+    var left: i32 = @intCast(piece_length);
+    var piece_buf = try self.allocator.alloc(u8, piece_length);
     defer self.allocator.free(piece_buf);
     while (left > 0) {
         const length = if (left > k16) k16 else left;
