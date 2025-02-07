@@ -25,11 +25,30 @@ pub fn init(allocator: std.mem.Allocator, rel_path: []const u8) !Self {
     var info_hash = std.crypto.hash.Sha1.init(.{});
     info_hash.update(str.items);
 
-    return .{ .allocator = allocator, .bytes = bytes, .announce = announce, .info = .{ .length = @intCast(info.dict.get("length").?.int), .name = info.dict.get("name").?.string, .piece_length = @intCast(info.dict.get("piece length").?.int), .pieces = info.dict.get("pieces").?.string }, .info_hash = info_hash.finalResult() };
+    const pieces = info.dict.get("pieces").?.string;
+    var piece_hashes = std.ArrayList([]const u8).init(allocator);
+    var pieces_window = std.mem.window(u8, pieces, 20, 20);
+    while (pieces_window.next()) |piece| {
+        try piece_hashes.append(piece);
+    }
+    return .{
+        .allocator = allocator,
+        .bytes = bytes,
+        .announce = announce,
+        .info = .{
+            .length = @intCast(info.dict.get("length").?.int),
+            .name = info.dict.get("name").?.string,
+            .piece_length = @intCast(info.dict.get("piece length").?.int),
+            .pieces = pieces,
+            .piece_hashes = try piece_hashes.toOwnedSlice(),
+        },
+        .info_hash = info_hash.finalResult(),
+    };
 }
 
 pub fn deinit(self: Self) void {
     self.allocator.free(self.bytes);
+    self.allocator.free(self.info.piece_hashes);
 }
 
 const Info = struct {
@@ -37,10 +56,10 @@ const Info = struct {
     name: []const u8,
     piece_length: usize,
     pieces: []const u8,
+    piece_hashes: [][]const u8,
 
     pub fn pieceHashes(self: Info, writer: anytype) !void {
-        var pieces_window = std.mem.window(u8, self.pieces, 20, 20);
-        while (pieces_window.next()) |piece| {
+        for (self.piece_hashes) |piece| {
             try writer.print("{s}\n", .{std.fmt.fmtSliceHexLower(piece)});
         }
     }

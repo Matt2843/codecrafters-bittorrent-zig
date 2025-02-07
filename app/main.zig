@@ -64,15 +64,14 @@ pub fn main() !void {
             try stdout.print("Peer ID: {s}\n", .{std.fmt.fmtSliceHexLower(&handshake.peer_id)});
         },
         .download_piece => {
-            // $ ./your_bittorrent.sh download_piece -o /tmp/test-piece sample.torrent <piece_index>
             const torrent = try tor.init(allocator, args[4]);
             defer torrent.deinit();
             const client = try BitTorrentClient.init(allocator, torrent);
             defer client.deinit();
 
-            const index = try std.fmt.parseInt(u32, args[5], 10);
+            const index = try std.fmt.parseInt(i32, args[5], 10);
 
-            try client.downloadPiece(index);
+            try client.downloadPiece(index, args[3]);
         },
     }
 }

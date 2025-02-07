@@ -3,6 +3,9 @@ main
 zig-cache/
 zig-out/
 
+# tmp files
+tmp/
+
 # Compiled binary output
 bin/
 !bin/.gitkeep

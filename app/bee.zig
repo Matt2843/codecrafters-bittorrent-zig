@@ -10,7 +10,7 @@ const Value = union(enum) {
     end,
 
     pub fn encode(self: Self, writer: anytype) !void {
-        return switch (self) {
+        switch (self) {
             .string => |s| try writer.print("{d}:{s}", .{ s.len, s }),
             .int => |i| try writer.print("i{d}e", .{i}),
             .list => |l| {
@@ -28,7 +28,7 @@ const Value = union(enum) {
                 try writer.print("e", .{});
             },
             .end => unreachable,
-        };
+        }
     }
 
     pub fn deinit(self: Self) void {
