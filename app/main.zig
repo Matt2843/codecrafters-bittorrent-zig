@@ -7,6 +7,7 @@ const Command = enum {
     decode,
     info,
     peers,
+    handshake,
 };
 
 pub fn main() !void {
@@ -45,6 +46,20 @@ pub fn main() !void {
             for (client.peers) |p| {
                 try stdout.print("{any}\n", .{p});
             }
+        },
+        .handshake => {
+            const torrent = try tor.init(allocator, args[2]);
+            defer torrent.deinit();
+            const client = try BitTorrentClient.init(allocator, torrent);
+            defer client.deinit();
+
+            var split = std.mem.splitScalar(u8, args[3], ':');
+            const ip = split.next().?;
+            const port = try std.fmt.parseInt(u16, split.next().?, 10);
+            const peer = try std.net.Address.parseIp4(ip, port);
+
+            const connection = try client.handshake(peer, stdout);
+            defer connection.close();
         },
     }
 }

@@ -6,12 +6,12 @@ const Self = @This();
 
 allocator: std.mem.Allocator,
 
-torrent: Torrent, // TODO: maybe remove?
-peer_id: []const u8,
+torrent: Torrent,
+peer_id: [20]u8,
 peers: []std.net.Address,
 
 pub fn init(allocator: std.mem.Allocator, torrent: Torrent) !Self {
-    const peer_id = "-mab-ztorrent-001224";
+    const peer_id: [20]u8 = "-mab-ztorrent-001224".*;
     const peers = try discoverPeers(allocator, peer_id, torrent);
     return .{
         .allocator = allocator,
@@ -25,7 +25,24 @@ pub fn deinit(self: Self) void {
     self.allocator.free(self.peers);
 }
 
-fn discoverPeers(allocator: std.mem.Allocator, peer_id: []const u8, torrent: Torrent) ![]std.net.Address {
+pub fn handshake(self: Self, peer: std.net.Address, writer: anytype) !std.net.Stream {
+    const connection = try std.net.tcpConnectToAddress(peer);
+    const shake = Handshake{ .info_hash = self.torrent.info_hash, .peer_id = self.peer_id };
+    try connection.writer().writeStruct(shake);
+    const response = try connection.reader().readStruct(Handshake);
+    try writer.print("Peer ID: {s}\n", .{std.fmt.fmtSliceHexLower(&response.peer_id)});
+    return connection;
+}
+
+const Handshake = extern struct {
+    length: u8 = 19,
+    protocol: [19]u8 = "BitTorrent protocol".*,
+    zeroes: [8]u8 = std.mem.zeroes([8]u8),
+    info_hash: [20]u8 = undefined,
+    peer_id: [20]u8 = undefined,
+};
+
+fn discoverPeers(allocator: std.mem.Allocator, peer_id: [20]u8, torrent: Torrent) ![]std.net.Address {
     const query_params = try buildPeersQueryParams(allocator, peer_id, torrent);
     defer allocator.free(query_params);
     var uri = try std.Uri.parse(torrent.announce);
@@ -61,7 +78,7 @@ fn discoverPeers(allocator: std.mem.Allocator, peer_id: []const u8, torrent: Tor
     return peers_arr.toOwnedSlice();
 }
 
-fn buildPeersQueryParams(allocator: std.mem.Allocator, peer_id: []const u8, torrent: Torrent) ![]const u8 {
+fn buildPeersQueryParams(allocator: std.mem.Allocator, peer_id: [20]u8, torrent: Torrent) ![]const u8 {
     var query_params = std.ArrayList(u8).init(allocator);
     const writer = query_params.writer();
     try writer.print("info_hash={s}", .{torrent.info_hash});
