@@ -19,6 +19,8 @@ pub fn main() !void {
         std.process.exit(1);
     }
 
+    // broken
+
     const command = std.meta.stringToEnum(Command, args[1]).?;
     switch (command) {
         .decode => {
