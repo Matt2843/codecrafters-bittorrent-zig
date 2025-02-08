@@ -3,13 +3,7 @@ const bee = @import("bee.zig");
 const tor = @import("tor.zig");
 const BitTorrentClient = @import("client.zig");
 
-const Command = enum {
-    decode,
-    info,
-    peers,
-    handshake,
-    download_piece,
-};
+const Command = enum { decode, info, peers, handshake, download_piece, download };
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
@@ -63,14 +57,24 @@ pub fn main() !void {
             try stdout.print("Peer ID: {s}\n", .{std.fmt.fmtSliceHexLower(&handshake.peer_id)});
         },
         .download_piece => {
+            const index = try std.fmt.parseInt(i32, args[5], 10);
+
+            const torrent = try tor.init(allocator, args[4]);
+            defer torrent.deinit();
+
+            const client = try BitTorrentClient.init(allocator, torrent);
+            defer client.deinit();
+            const shake = try client.handshake(client.peers[1]);
+            try client.initPeer(shake.connection);
+
+            try client.downloadPiece(shake.connection, index, args[3], null);
+        },
+        .download => {
             const torrent = try tor.init(allocator, args[4]);
             defer torrent.deinit();
             const client = try BitTorrentClient.init(allocator, torrent);
             defer client.deinit();
-
-            const index = try std.fmt.parseInt(i32, args[5], 10);
-
-            try client.downloadPiece(index, args[3]);
+            try client.download(args[3]);
         },
     }
 }

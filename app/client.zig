@@ -25,54 +25,108 @@ pub fn deinit(self: Self) void {
     self.allocator.free(self.peers);
 }
 
+pub fn download(self: Self, rel_out: []const u8) !void {
+    const file_buf: []u8 = try self.allocator.alloc(u8, self.torrent.info.length);
+    defer self.allocator.free(file_buf);
+
+    var connection_queue = std.fifo.LinearFifo(std.net.Stream, .Dynamic){
+        .allocator = self.allocator,
+    };
+    defer connection_queue.deinit();
+    for (self.peers) |peer| {
+        const shake = try self.handshake(peer);
+        try self.initPeer(shake.connection);
+        try connection_queue.writeItem(shake.connection);
+    }
+
+    var pool: std.Thread.Pool = undefined;
+    try std.Thread.Pool.init(&pool, .{ .allocator = self.allocator, .n_jobs = @intCast(connection_queue.items.len) });
+
+    var piece_index: i32 = 0;
+    var piece_it = std.mem.window(u8, file_buf, self.torrent.info.piece_length, self.torrent.info.piece_length);
+    while (piece_it.next()) |piece| {
+        //const connection = connections.items[@as(usize, @intCast(piece_index)) % connections.items.len];
+
+        const connection = connection_queue.readItem();
+
+        try pool.spawn(downloadPieceThread, .{ self, connection, piece_index, @constCast(piece) });
+        std.debug.print("started downloading piece: {d}/{d}\n", .{ piece_index, self.torrent.info.piece_hashes.len - 1 });
+        piece_index += 1;
+        std.time.sleep(500000000);
+    }
+    pool.deinit();
+
+    const pfile = try std.fs.createFileAbsolute(rel_out, .{});
+    defer pfile.close();
+    try pfile.writeAll(file_buf);
+}
+
+fn downloadPieceThread(self: Self, connection: std.net.Stream, index: i32, piece_buf: []u8, queue: *std.fifo.LinearFifo(std.net.Stream, .Dynamic)) void {
+    self.downloadPiece(connection, index, "", piece_buf) catch |err| {
+        std.debug.print("error downloading piece {d}: {any}\n", .{ index, err });
+    };
+
+    queue.writeItem(connection) catch |err| {
+        std.debug.print("failed released connection {any}\n", .{err});
+    };
+}
+
 fn downloadBlock(allocator: std.mem.Allocator, connection: std.net.Stream, request: RequestPayload, block: []u8) !void {
-    std.debug.print("block stuff begin={d} len={d}\n", .{ request.begin, block.len });
+    std.debug.print("block dl: index={d} begin={d} len={d}\n", .{ request.index, request.begin, block.len });
     const request_msg = PeerMessage.init(.request, .{ .request = request });
     try request_msg.send(connection);
 
     const piece = try PeerMessage.receive(allocator, connection);
     defer piece.deinit();
 
+    if (piece.message_type != .piece) {
+        std.debug.print("what? {any}\n", .{piece});
+
+        unreachable;
+    }
+
     std.debug.assert(request.length == piece.payload.piece.block.len);
     @memcpy(block, piece.payload.piece.block);
 }
 
-pub fn downloadPiece(self: Self, index: i32, rel_out: []const u8) !void {
-    if (index >= self.torrent.info.piece_hashes.len) return;
-    const peer = self.peers[1];
-    const hs = try self.handshake(peer);
-
-    const bitfield = try PeerMessage.receive(self.allocator, hs.connection);
+pub fn initPeer(self: Self, connection: std.net.Stream) !void {
+    const bitfield = try PeerMessage.receive(self.allocator, connection);
     defer bitfield.deinit();
 
     const interested = PeerMessage.init(.interested, .none);
-    try interested.send(hs.connection);
+    try interested.send(connection);
 
-    const unchoke = try PeerMessage.receive(self.allocator, hs.connection);
+    const unchoke = try PeerMessage.receive(self.allocator, connection);
     defer unchoke.deinit();
+}
 
+pub fn downloadPiece(self: Self, connection: std.net.Stream, index: i32, rel_out: []const u8, full_block: ?[]u8) !void {
+    if (index >= self.torrent.info.piece_hashes.len) return;
     var begin: i32 = 0;
     const k16 = 1024 * 16;
     const piece_length = if (index == self.torrent.info.piece_hashes.len - 1) self.torrent.info.length % self.torrent.info.piece_length else self.torrent.info.piece_length;
-    std.debug.print("piece length={d}\n", .{piece_length});
     const piece_buf = try self.allocator.alloc(u8, piece_length);
     defer self.allocator.free(piece_buf);
     var piece_blocks = std.mem.window(u8, piece_buf, k16, k16);
     while (piece_blocks.next()) |block| {
         const request = RequestPayload{ .index = index, .begin = begin, .length = @intCast(block.len) };
-        try downloadBlock(self.allocator, hs.connection, request, @constCast(block));
+        try downloadBlock(self.allocator, connection, request, @constCast(block));
         begin += k16;
     }
 
-    //  var info_hash = std.crypto.hash.Sha1.init(.{});
-    //  info_hash.update(piece_buf);
+    var info_hash = std.crypto.hash.Sha1.init(.{});
+    info_hash.update(piece_buf);
 
-    //  const digest = info_hash.finalResult();
-    //  std.debug.assert(std.mem.eql(u8, &digest, self.torrent.info.piece_hashes[@intCast(index)]));
+    const digest = info_hash.finalResult();
+    std.debug.assert(std.mem.eql(u8, &digest, self.torrent.info.piece_hashes[@intCast(index)]));
 
-    const pfile = try std.fs.createFileAbsolute(rel_out, .{});
-    defer pfile.close();
-    try pfile.writeAll(piece_buf);
+    if (full_block) |fb| {
+        @memcpy(fb, piece_buf);
+    } else {
+        const pfile = try std.fs.createFileAbsolute(rel_out, .{});
+        defer pfile.close();
+        try pfile.writeAll(piece_buf);
+    }
 }
 
 const PeerMessageType = enum(u8) {
@@ -221,6 +275,8 @@ fn discoverPeers(allocator: std.mem.Allocator, peer_id: [20]u8, torrent: Torrent
     var server_header_buf: [4096]u8 = undefined;
     var request = try client.open(.GET, uri, .{ .server_header_buffer = &server_header_buf });
     defer request.deinit();
+
+    std.debug.print("discovering peers @ {s}\n", .{std.fmt.fmtSliceHexLower(&torrent.info_hash)});
 
     try request.send();
     try request.finish();
