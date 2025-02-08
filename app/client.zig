@@ -26,6 +26,7 @@ pub fn deinit(self: Self) void {
 }
 
 fn downloadBlock(allocator: std.mem.Allocator, connection: std.net.Stream, request: RequestPayload, block: []u8) !void {
+    std.debug.print("block stuff begin={d} len={d}\n", .{ request.begin, block.len });
     const request_msg = PeerMessage.init(.request, .{ .request = request });
     try request_msg.send(connection);
 
@@ -53,6 +54,7 @@ pub fn downloadPiece(self: Self, index: i32, rel_out: []const u8) !void {
     var begin: i32 = 0;
     const k16 = 1024 * 16;
     const piece_length = self.torrent.info.piece_length;
+    std.debug.print("piece length={d}\n", .{piece_length});
     const piece_buf = try self.allocator.alloc(u8, piece_length);
     defer self.allocator.free(piece_buf);
     var piece_blocks = std.mem.window(u8, piece_buf, k16, k16);
