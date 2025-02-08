@@ -25,6 +25,17 @@ pub fn deinit(self: Self) void {
     self.allocator.free(self.peers);
 }
 
+fn downloadBlock(allocator: std.mem.Allocator, connection: std.net.Stream, request: RequestPayload, block: []u8) !void {
+    const request_msg = PeerMessage.init(.request, .{ .request = request });
+    try request_msg.send(connection);
+
+    const piece = try PeerMessage.receive(allocator, connection);
+    defer piece.deinit();
+
+    std.debug.assert(request.length == piece.payload.piece.block.len);
+    @memcpy(block, piece.payload.piece.block);
+}
+
 pub fn downloadPiece(self: Self, index: i32, rel_out: []const u8) !void {
     if (index >= self.torrent.info.piece_hashes.len) return;
 
@@ -63,35 +74,45 @@ pub fn downloadPiece(self: Self, index: i32, rel_out: []const u8) !void {
     //          index: the zero-based piece index
     //          begin: the zero-based byte offset within the piece
     //          block: the data for the piece, usually 2^14 bytes long
-    const k16: i32 = 16 * 1024;
+
     var begin: i32 = 0;
-
-    const index_usize: usize = @intCast(index);
-    const max_piece_length: usize = @intCast(self.torrent.info.piece_length);
-    const min_piece_length: usize = @intCast(self.torrent.info.length % self.torrent.info.piece_length);
-    const piece_length: usize = if (index_usize == self.torrent.info.piece_hashes.len - 1) min_piece_length else max_piece_length;
-
-    var left: i32 = @intCast(piece_length);
-    var piece_buf = try self.allocator.alloc(u8, piece_length);
+    const k16 = 1024 * 16;
+    const piece_length = self.torrent.info.piece_length;
+    const piece_buf = try self.allocator.alloc(u8, piece_length);
     defer self.allocator.free(piece_buf);
-    while (left > 0) {
-        const length = if (left > k16) k16 else left;
-        const request = PeerMessage.init(.request, .{ .request = .{ .index = index, .begin = begin, .length = length } });
-        try request.send(hs.connection);
-
-        const piece = try PeerMessage.receive(self.allocator, hs.connection);
-        defer piece.deinit();
-
-        std.debug.assert(length == piece.payload.piece.block.len);
-
-        const bs: usize = @intCast(piece.payload.piece.begin);
-        const ls: usize = @intCast(piece.payload.piece.block.len);
-
-        @memcpy(piece_buf[bs .. bs + ls], piece.payload.piece.block);
-
+    var piece_blocks = std.mem.window(u8, piece_buf, k16, k16);
+    while (piece_blocks.next()) |block| {
+        const request = RequestPayload{ .index = index, .begin = begin, .length = @intCast(block.len) };
+        try downloadBlock(self.allocator, hs.connection, request, @constCast(block));
         begin += k16;
-        left -= length;
     }
+
+    //const index_usize: usize = @intCast(index);
+    //const max_piece_length: usize = @intCast(self.torrent.info.piece_length);
+    //const min_piece_length: usize = @intCast(self.torrent.info.length % self.torrent.info.piece_length);
+    //const piece_length: usize = if (index_usize == self.torrent.info.piece_hashes.len - 1) min_piece_length else max_piece_length;
+
+    //var left: i32 = @intCast(piece_length);
+    //var piece_buf = try self.allocator.alloc(u8, piece_length);
+    //defer self.allocator.free(piece_buf);
+    //while (left > 0) {
+    //    const length = if (left > k16) k16 else left;
+    //    const request = PeerMessage.init(.request, .{ .request = .{ .index = index, .begin = begin, .length = length } });
+    //    try request.send(hs.connection);
+
+    //    const piece = try PeerMessage.receive(self.allocator, hs.connection);
+    //    defer piece.deinit();
+
+    //    std.debug.assert(length == piece.payload.piece.block.len);
+
+    //    const bs: usize = @intCast(piece.payload.piece.begin);
+    //    const ls: usize = @intCast(piece.payload.piece.block.len);
+
+    //    @memcpy(piece_buf[bs .. bs + ls], piece.payload.piece.block);
+
+    //    begin += k16;
+    //    left -= length;
+    //}
     var info_hash = std.crypto.hash.Sha1.init(.{});
     info_hash.update(piece_buf);
     const digest = info_hash.finalResult();
@@ -100,6 +121,8 @@ pub fn downloadPiece(self: Self, index: i32, rel_out: []const u8) !void {
     const pfile = try std.fs.createFileAbsolute(rel_out, .{});
     defer pfile.close();
     try pfile.writeAll(piece_buf);
+
+    std.debug.print("saved file at {s}\n", .{rel_out});
 }
 
 const PeerMessageType = enum(u8) {
