@@ -53,7 +53,7 @@ pub fn downloadPiece(self: Self, index: i32, rel_out: []const u8) !void {
 
     var begin: i32 = 0;
     const k16 = 1024 * 16;
-    const piece_length = self.torrent.info.piece_length;
+    const piece_length = if (index == self.torrent.info.piece_hashes.len - 1) self.torrent.info.length % self.torrent.info.piece_length else self.torrent.info.piece_length;
     std.debug.print("piece length={d}\n", .{piece_length});
     const piece_buf = try self.allocator.alloc(u8, piece_length);
     defer self.allocator.free(piece_buf);
