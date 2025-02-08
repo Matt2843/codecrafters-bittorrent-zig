@@ -39,7 +39,7 @@ fn downloadBlock(allocator: std.mem.Allocator, connection: std.net.Stream, reque
 
 pub fn downloadPiece(self: Self, index: i32, rel_out: []const u8) !void {
     if (index >= self.torrent.info.piece_hashes.len) return;
-    const peer = self.peers[0];
+    const peer = self.peers[1];
     const hs = try self.handshake(peer);
 
     const bitfield = try PeerMessage.receive(self.allocator, hs.connection);
@@ -226,11 +226,15 @@ fn discoverPeers(allocator: std.mem.Allocator, peer_id: [20]u8, torrent: Torrent
     try request.finish();
     try request.wait();
 
-    const body = try request.reader().readAllAlloc(allocator, comptime 100 * 1024 * 1024);
+    const body = try request.reader().readAllAlloc(allocator, comptime 10 * 1024 * 1024);
     defer allocator.free(body);
 
     var decoded = try bee.decode(allocator, body);
     defer decoded.deinit();
+
+    const stdout = std.io.getStdOut().writer();
+    try decoded.value.dump(stdout);
+    std.debug.print("\n", .{});
 
     var peers_arr = std.ArrayList(std.net.Address).init(allocator);
     const peers_raw = decoded.value.dict.get("peers").?.string;
