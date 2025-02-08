@@ -107,9 +107,11 @@ pub fn initPeer(self: Self, connection: std.net.Stream) !void {
 pub fn downloadPiece(self: Self, connection: std.net.Stream, index: i32, rel_out: []const u8, full_block: ?[]u8) !void {
     if (index >= self.torrent.info.piece_hashes.len) return;
     var begin: i32 = 0;
+
     const k16 = 1024 * 16;
     const piece_length = if (index == self.torrent.info.piece_hashes.len - 1) self.torrent.info.length % self.torrent.info.piece_length else self.torrent.info.piece_length;
     const piece_buf = try self.allocator.alloc(u8, piece_length);
+
     defer self.allocator.free(piece_buf);
     var piece_blocks = std.mem.window(u8, piece_buf, k16, k16);
     while (piece_blocks.next()) |block| {
