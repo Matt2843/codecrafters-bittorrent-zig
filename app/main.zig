@@ -26,7 +26,6 @@ pub fn main() !void {
     }
 
     const command = std.meta.stringToEnum(Command, args[1]).?;
-
     switch (command) {
         .decode => {
             const decoded = try bee.decode(allocator, args[2]);
