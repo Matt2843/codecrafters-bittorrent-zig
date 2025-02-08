@@ -38,42 +38,17 @@ fn downloadBlock(allocator: std.mem.Allocator, connection: std.net.Stream, reque
 
 pub fn downloadPiece(self: Self, index: i32, rel_out: []const u8) !void {
     if (index >= self.torrent.info.piece_hashes.len) return;
-
     const peer = self.peers[0];
     const hs = try self.handshake(peer);
-    //  Wait for a bitfield message from the peer indicating which pieces it has
-    //      The message id for this message type is 5.
-    //      You can read and ignore the payload for now, the tracker we use for this challenge ensures that all peers have all pieces available.
+
     const bitfield = try PeerMessage.receive(self.allocator, hs.connection);
     defer bitfield.deinit();
-    //  Send an interested message
-    //      The message id for interested is 2.
-    //      The payload for this message is empty.
+
     const interested = PeerMessage.init(.interested, .none);
     try interested.send(hs.connection);
-    //  Wait until you receive an unchoke message back
-    //      The message id for unchoke is 1.
-    //      The payload for this message is empty.
+
     const unchoke = try PeerMessage.receive(self.allocator, hs.connection);
     defer unchoke.deinit();
-    //  Break the piece into blocks of 16 kiB (16 * 1024 bytes) and send a request message for each block
-
-    //      The message id for request is 6.
-    //      The payload for this message consists of:
-    //          index: the zero-based piece index
-    //          begin: the zero-based byte offset within the piece
-    //              This'll be 0 for the first block, 2^14 for the second block, 2*2^14 for the third block etc.
-    //          length: the length of the block in bytes
-    //              This'll be 2^14 (16 * 1024) for all blocks except the last one.
-    //              The last block will contain 2^14 bytes or less, you'll need calculate this value using the piece length.
-
-    //  Wait for a piece message for each block you've requested
-
-    //      The message id for piece is 7.
-    //      The payload for this message consists of:
-    //          index: the zero-based piece index
-    //          begin: the zero-based byte offset within the piece
-    //          block: the data for the piece, usually 2^14 bytes long
 
     var begin: i32 = 0;
     const k16 = 1024 * 16;
@@ -87,42 +62,15 @@ pub fn downloadPiece(self: Self, index: i32, rel_out: []const u8) !void {
         begin += k16;
     }
 
-    //const index_usize: usize = @intCast(index);
-    //const max_piece_length: usize = @intCast(self.torrent.info.piece_length);
-    //const min_piece_length: usize = @intCast(self.torrent.info.length % self.torrent.info.piece_length);
-    //const piece_length: usize = if (index_usize == self.torrent.info.piece_hashes.len - 1) min_piece_length else max_piece_length;
+    //  var info_hash = std.crypto.hash.Sha1.init(.{});
+    //  info_hash.update(piece_buf);
 
-    //var left: i32 = @intCast(piece_length);
-    //var piece_buf = try self.allocator.alloc(u8, piece_length);
-    //defer self.allocator.free(piece_buf);
-    //while (left > 0) {
-    //    const length = if (left > k16) k16 else left;
-    //    const request = PeerMessage.init(.request, .{ .request = .{ .index = index, .begin = begin, .length = length } });
-    //    try request.send(hs.connection);
-
-    //    const piece = try PeerMessage.receive(self.allocator, hs.connection);
-    //    defer piece.deinit();
-
-    //    std.debug.assert(length == piece.payload.piece.block.len);
-
-    //    const bs: usize = @intCast(piece.payload.piece.begin);
-    //    const ls: usize = @intCast(piece.payload.piece.block.len);
-
-    //    @memcpy(piece_buf[bs .. bs + ls], piece.payload.piece.block);
-
-    //    begin += k16;
-    //    left -= length;
-    //}
-    var info_hash = std.crypto.hash.Sha1.init(.{});
-    info_hash.update(piece_buf);
-    const digest = info_hash.finalResult();
-    std.debug.assert(std.mem.eql(u8, &digest, self.torrent.info.piece_hashes[@intCast(index)]));
+    //  const digest = info_hash.finalResult();
+    //  std.debug.assert(std.mem.eql(u8, &digest, self.torrent.info.piece_hashes[@intCast(index)]));
 
     const pfile = try std.fs.createFileAbsolute(rel_out, .{});
     defer pfile.close();
     try pfile.writeAll(piece_buf);
-
-    std.debug.print("saved file at {s}\n", .{rel_out});
 }
 
 const PeerMessageType = enum(u8) {
@@ -281,10 +229,6 @@ fn discoverPeers(allocator: std.mem.Allocator, peer_id: [20]u8, torrent: Torrent
 
     var decoded = try bee.decode(allocator, body);
     defer decoded.deinit();
-
-    const stdout = std.io.getStdOut().writer();
-    try decoded.value.dump(stdout);
-    try stdout.print("\n", .{});
 
     var peers_arr = std.ArrayList(std.net.Address).init(allocator);
     const peers_raw = decoded.value.dict.get("peers").?.string;
