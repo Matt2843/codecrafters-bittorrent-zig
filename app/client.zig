@@ -29,30 +29,32 @@ pub fn download(self: Self, rel_out: []const u8) !void {
     const file_buf: []u8 = try self.allocator.alloc(u8, self.torrent.info.length);
     defer self.allocator.free(file_buf);
 
-    var connection_queue = std.fifo.LinearFifo(std.net.Stream, .Dynamic){
-        .allocator = self.allocator,
-    };
-    defer connection_queue.deinit();
+    var connections = std.ArrayList(std.net.Stream).init(self.allocator);
+    defer connections.deinit();
     for (self.peers) |peer| {
         const shake = try self.handshake(peer);
         try self.initPeer(shake.connection);
-        try connection_queue.writeItem(shake.connection);
+        try connections.append(shake.connection);
     }
 
     var pool: std.Thread.Pool = undefined;
-    try std.Thread.Pool.init(&pool, .{ .allocator = self.allocator, .n_jobs = @intCast(connection_queue.items.len) });
+    try std.Thread.Pool.init(&pool, .{ .allocator = self.allocator, .n_jobs = @intCast(connections.items.len) });
+
+    var mutex = std.Thread.Mutex{};
 
     var piece_index: i32 = 0;
     var piece_it = std.mem.window(u8, file_buf, self.torrent.info.piece_length, self.torrent.info.piece_length);
     while (piece_it.next()) |piece| {
-        //const connection = connections.items[@as(usize, @intCast(piece_index)) % connections.items.len];
+        while (connections.items.len == 0) {
+            std.time.sleep(500000000);
+        }
+        mutex.lock();
+        const connection = connections.orderedRemove(0);
+        mutex.unlock();
 
-        const connection = connection_queue.readItem();
-
-        try pool.spawn(downloadPieceThread, .{ self, connection, piece_index, @constCast(piece) });
+        try pool.spawn(downloadPieceThread, .{ self, connection, piece_index, @constCast(piece), &mutex, &connections });
         std.debug.print("started downloading piece: {d}/{d}\n", .{ piece_index, self.torrent.info.piece_hashes.len - 1 });
         piece_index += 1;
-        std.time.sleep(500000000);
     }
     pool.deinit();
 
@@ -61,14 +63,16 @@ pub fn download(self: Self, rel_out: []const u8) !void {
     try pfile.writeAll(file_buf);
 }
 
-fn downloadPieceThread(self: Self, connection: std.net.Stream, index: i32, piece_buf: []u8, queue: *std.fifo.LinearFifo(std.net.Stream, .Dynamic)) void {
+fn downloadPieceThread(self: Self, connection: std.net.Stream, index: i32, piece_buf: []u8, mutex: *std.Thread.Mutex, connections: *std.ArrayList(std.net.Stream)) void {
     self.downloadPiece(connection, index, "", piece_buf) catch |err| {
         std.debug.print("error downloading piece {d}: {any}\n", .{ index, err });
     };
 
-    queue.writeItem(connection) catch |err| {
-        std.debug.print("failed released connection {any}\n", .{err});
+    mutex.lock();
+    connections.append(connection) catch |err| {
+        std.debug.print("failed to release the connection {any}\n", .{err});
     };
+    mutex.unlock();
 }
 
 fn downloadBlock(allocator: std.mem.Allocator, connection: std.net.Stream, request: RequestPayload, block: []u8) !void {
