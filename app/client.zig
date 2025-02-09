@@ -233,8 +233,11 @@ const PeerMessage = struct {
             .piece => {
                 const index = try connection.reader().readInt(i32, .big);
                 const begin = try connection.reader().readInt(i32, .big);
+
+                // this is super slow..
                 const block = try allocator.alloc(u8, message_length - 9);
                 const read = try connection.reader().readAll(block);
+
                 std.debug.assert(block.len == read);
                 payload = .{ .piece = .{
                     .index = index,

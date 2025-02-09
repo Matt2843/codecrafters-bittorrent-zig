@@ -7,9 +7,14 @@ const Command = enum { decode, info, peers, handshake, download_piece, download 
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+
+    //var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    //const allocator = gpa.allocator();
+    //defer _ = gpa.deinit();
+
+    var buffer: [10 * 1024 * 1024]u8 = undefined;
+    var fba = std.heap.FixedBufferAllocator.init(&buffer);
+    const allocator = fba.allocator();
 
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
@@ -18,8 +23,6 @@ pub fn main() !void {
         try stdout.print("Usage: your_bittorrent.zig <command> <args>\n", .{});
         std.process.exit(1);
     }
-
-    // broken
 
     const command = std.meta.stringToEnum(Command, args[1]).?;
     switch (command) {
