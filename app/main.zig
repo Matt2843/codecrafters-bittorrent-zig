@@ -41,8 +41,10 @@ pub fn main() !void {
         .peers => {
             const torrent = try tor.init(allocator, args[2]);
             defer torrent.deinit();
+
             const client = try BitTorrentClient.init(allocator, torrent);
-            //defer client.deinit();
+            defer client.deinit();
+
             for (client.peers) |p| {
                 try stdout.print("{any}\n", .{p});
             }
@@ -50,8 +52,9 @@ pub fn main() !void {
         .handshake => {
             const torrent = try tor.init(allocator, args[2]);
             defer torrent.deinit();
+
             const client = try BitTorrentClient.init(allocator, torrent);
-            //defer client.deinit();
+            defer client.deinit();
 
             var split = std.mem.splitScalar(u8, args[3], ':');
             const ip = split.next().?;
@@ -73,7 +76,7 @@ pub fn main() !void {
             defer torrent.deinit();
 
             var client = try BitTorrentClient.init(arena_allocator, torrent);
-            //defer client.deinit();
+            defer client.deinit();
 
             try client.downloadPiece(index, args[3], null);
         },
@@ -86,7 +89,7 @@ pub fn main() !void {
             defer torrent.deinit();
 
             var client = try BitTorrentClient.init(arena_allocator, torrent);
-            //defer client.deinit();
+            defer client.deinit();
 
             try client.download(args[3]);
         },

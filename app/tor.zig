@@ -22,8 +22,9 @@ pub fn init(allocator: std.mem.Allocator, rel_path: []const u8) !Self {
     defer info_hash_raw.deinit();
     try info.encode(info_hash_raw.writer());
 
-    var info_hash = std.crypto.hash.Sha1.init(.{});
-    info_hash.update(info_hash_raw.items);
+    var info_hasher = std.crypto.hash.Sha1.init(.{});
+    info_hasher.update(info_hash_raw.items);
+    const info_hash = info_hasher.finalResult();
 
     const pieces = info.dict.get("pieces").?.string;
     var piece_hashes = std.ArrayList([]const u8).init(allocator);
@@ -31,19 +32,13 @@ pub fn init(allocator: std.mem.Allocator, rel_path: []const u8) !Self {
     while (pieces_window.next()) |piece| {
         try piece_hashes.append(piece);
     }
-    return .{
-        .allocator = allocator,
-        .bytes = bytes,
-        .announce = announce,
-        .info = .{
-            .length = @intCast(info.dict.get("length").?.int),
-            .name = info.dict.get("name").?.string,
-            .piece_length = @intCast(info.dict.get("piece length").?.int),
-            .pieces = pieces,
-            .piece_hashes = try piece_hashes.toOwnedSlice(),
-        },
-        .info_hash = info_hash.finalResult(),
-    };
+    return .{ .allocator = allocator, .bytes = bytes, .announce = announce, .info = .{
+        .length = @intCast(info.dict.get("length").?.int),
+        .name = info.dict.get("name").?.string,
+        .piece_length = @intCast(info.dict.get("piece length").?.int),
+        .pieces = pieces,
+        .piece_hashes = try piece_hashes.toOwnedSlice(),
+    }, .info_hash = info_hash };
 }
 
 pub fn deinit(self: Self) void {

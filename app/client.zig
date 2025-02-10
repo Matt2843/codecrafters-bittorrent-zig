@@ -31,10 +31,10 @@ pub fn init(allocator: std.mem.Allocator, torrent: Torrent) !Self {
     };
 }
 
-//pub fn deinit(self: Self) void {
-//    self.allocator.free(self.peers);
-//    self.connections.deinit();
-//}
+pub fn deinit(self: Self) void {
+    self.allocator.free(self.peers);
+    self.connections.deinit();
+}
 
 pub fn download(self: *Self, out: []const u8) !void {
     const full_buf: []u8 = try self.allocator.alloc(u8, self.torrent.info.length);
@@ -70,7 +70,7 @@ pub fn downloadPiece(self: *Self, index: usize, out: []const u8, full_block: ?[]
 
     //const count_blocks = (piece_size + k16 - 1) / k16;
     var pool: std.Thread.Pool = undefined;
-    try std.Thread.Pool.init(&pool, .{ .allocator = self.allocator, .n_jobs = @intCast(self.connections.items.len) });
+    try std.Thread.Pool.init(&pool, .{ .allocator = self.allocator, .n_jobs = 16 });
 
     var mutex = std.Thread.Mutex{};
 
@@ -129,6 +129,7 @@ fn downloadBlock(allocator: std.mem.Allocator, connection: std.net.Stream, index
 
 fn discoverPeers(allocator: std.mem.Allocator, torrent: Torrent, peer_id: [20]u8) ![]std.net.Address {
     const query_params = try buildPeersQueryParams(allocator, torrent, peer_id);
+    defer allocator.free(query_params);
     std.debug.print("discovering peers @ {s}\n", .{std.fmt.fmtSliceHexLower(&torrent.info_hash)});
 
     var uri = try std.Uri.parse(torrent.announce);
@@ -146,16 +147,23 @@ fn discoverPeers(allocator: std.mem.Allocator, torrent: Torrent, peer_id: [20]u8
     try request.wait();
 
     const body = try request.reader().readAllAlloc(allocator, comptime 10 * 1024 * 1024);
-    //defer allocator.free(body);
+    defer allocator.free(body);
 
     var decoded = try bee.decode(allocator, body);
-    //defer decoded.deinit();
+    defer decoded.deinit();
 
     var peers_arr = std.ArrayList(std.net.Address).init(allocator);
     const peers_raw = decoded.value.dict.get("peers") orelse {
+        var base64file: [10 * 1024 * 1024]u8 = undefined;
+        const enc = std.base64.url_safe_no_pad.Encoder.encode(&base64file, torrent.bytes);
+
         const stdout = std.io.getStdOut().writer();
         try decoded.value.dump(stdout);
         try stdout.print("\n", .{});
+        try stdout.print("{any}\n", .{torrent.info});
+
+        try stdout.print("\nFILE:\n", .{});
+        try stdout.print("{s}\n", .{enc});
         unreachable;
     };
     var peers_window_it = std.mem.window(u8, peers_raw.string, 6, 6);
