@@ -18,12 +18,8 @@ pub fn init(allocator: std.mem.Allocator, rel_path: []const u8) !Self {
     const announce = dict.get("announce").?.string;
     const info = dict.get("info").?;
 
-    var info_hash_raw = std.ArrayList(u8).init(allocator);
-    defer info_hash_raw.deinit();
-    try info.encode(info_hash_raw.writer());
-
     var info_hasher = std.crypto.hash.Sha1.init(.{});
-    info_hasher.update(info_hash_raw.items);
+    try info.encode(info_hasher.writer());
     const info_hash = info_hasher.finalResult();
 
     const pieces = info.dict.get("pieces").?.string;

@@ -135,6 +135,8 @@ fn discoverPeers(allocator: std.mem.Allocator, torrent: Torrent, peer_id: [20]u8
     var uri = try std.Uri.parse(torrent.announce);
     uri.query = .{ .raw = query_params };
 
+    std.debug.print("{any}\n", .{uri});
+
     var client = std.http.Client{ .allocator = allocator };
     defer client.deinit();
 
