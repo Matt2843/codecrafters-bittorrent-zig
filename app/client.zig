@@ -38,16 +38,11 @@ pub fn deinit(self: Self) void {
 
 pub fn download(self: *Self, out: []const u8) !void {
     const full_buf: []u8 = try self.allocator.alloc(u8, self.torrent.info.length);
-    //var pool: std.Thread.Pool = undefined;
-    //const pieces: u32 = @intCast(self.torrent.info.piece_hashes.len);
-    //try std.Thread.Pool.init(&pool, .{ .allocator = self.allocator, .n_jobs = pieces });
     var index: usize = 0;
     var full_blocks = std.mem.window(u8, full_buf, self.torrent.info.piece_length, self.torrent.info.piece_length);
     while (full_blocks.next()) |block| : (index += 1) {
-        //std.debug.print("downloading piece {d}/{d}\n", .{ index, pieces - 1 });
         try self.downloadPiece(index, "", @constCast(block));
     }
-    //pool.deinit();
     const pfile = try std.fs.createFileAbsolute(out, .{});
     defer pfile.close();
     try pfile.writeAll(full_buf);
@@ -68,18 +63,15 @@ pub fn downloadPiece(self: *Self, index: usize, out: []const u8, full_block: ?[]
     const piece_buf: []u8 = try self.allocator.alloc(u8, piece_size);
     defer self.allocator.free(piece_buf);
 
-    //const count_blocks = (piece_size + k16 - 1) / k16;
     var pool: std.Thread.Pool = undefined;
-    try std.Thread.Pool.init(&pool, .{ .allocator = self.allocator, .n_jobs = 16 });
+    try std.Thread.Pool.init(&pool, .{ .allocator = self.allocator, .n_jobs = @intCast(self.connections.items.len) });
 
     var mutex = std.Thread.Mutex{};
 
     var begin: usize = 0;
     var piece_blocks = std.mem.window(u8, piece_buf, k16, k16);
     while (piece_blocks.next()) |block| : (begin += k16) {
-        while (self.connections.items.len == 0) {
-            std.time.sleep(25 * std.time.ns_per_ms);
-        }
+        while (self.connections.items.len == 0) {}
         mutex.lock();
         const connection = self.connections.pop();
         mutex.unlock();
@@ -133,8 +125,9 @@ fn discoverPeers(allocator: std.mem.Allocator, torrent: Torrent, peer_id: [20]u8
     std.debug.print("discovering peers @ {s}\n", .{std.fmt.fmtSliceHexLower(&torrent.info_hash)});
 
     var uri = try std.Uri.parse(torrent.announce);
-    uri.query = .{ .raw = query_params };
+    uri.query = .{ .percent_encoded = query_params };
 
+    std.debug.print("{s}\n", .{std.fmt.fmtSliceHexLower(&torrent.info_hash)});
     std.debug.print("{any}\n", .{uri});
 
     var client = std.http.Client{ .allocator = allocator };
@@ -181,7 +174,8 @@ fn discoverPeers(allocator: std.mem.Allocator, torrent: Torrent, peer_id: [20]u8
 fn buildPeersQueryParams(allocator: std.mem.Allocator, torrent: Torrent, peer_id: [20]u8) ![]const u8 {
     var query_params = std.ArrayList(u8).init(allocator);
     const writer = query_params.writer();
-    try writer.print("info_hash={s}", .{torrent.info_hash});
+    try writer.print("info_hash=", .{});
+    try std.Uri.Component.percentEncode(writer, &torrent.info_hash, std.ascii.isAlphanumeric);
     try writer.print("&peer_id={s}", .{peer_id});
     try writer.print("&port={d}", .{6881});
     try writer.print("&uploaded={d}", .{0});
