@@ -16,6 +16,7 @@ peers: []std.net.Address,
 pub fn init(allocator: std.mem.Allocator, torrent: Torrent) !Self {
     const peer_id: [20]u8 = "-mab-ztorrent-001224".*;
     const peers = try discoverPeers(allocator, torrent, peer_id);
+    errdefer allocator.free(peers);
     var connections = std.ArrayList(std.net.Stream).init(allocator);
     for (peers) |peer| {
         const shake = try pee.handshake(torrent.info_hash, peer_id, peer);
