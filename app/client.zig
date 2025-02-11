@@ -110,7 +110,7 @@ pub fn downloadPiece(self: *Self, index: usize, out: []const u8, full_block: ?[]
 }
 
 fn downloadBlock(allocator: std.mem.Allocator, connection: std.net.Stream, index: i32, begin: i32, block_buf: []u8) !void {
-    std.debug.print("download block index={d} begin={d} len={d}\n", .{ index, begin, block_buf.len });
+    //std.debug.print("download block index={d} begin={d} len={d}\n", .{ index, begin, block_buf.len });
     const request = pee.PeerMessage.init(.request, .{ .request = .{ .index = index, .begin = begin, .length = @intCast(block_buf.len) } });
     request.send(connection) catch return error.FailedBlock;
 
