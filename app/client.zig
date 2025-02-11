@@ -63,22 +63,27 @@ pub fn downloadPiece(self: *Self, index: usize, out: []const u8, full_block: ?[]
     const piece_buf: []u8 = try self.allocator.alloc(u8, piece_size);
     defer self.allocator.free(piece_buf);
 
-    var pool: std.Thread.Pool = undefined;
-    try std.Thread.Pool.init(&pool, .{ .allocator = self.allocator, .n_jobs = @intCast(self.connections.items.len) });
+    //var pool: std.Thread.Pool = undefined;
+    //try std.Thread.Pool.init(&pool, .{ .allocator = self.allocator, .n_jobs = @intCast(self.connections.items.len) });
 
-    var mutex = std.Thread.Mutex{};
+    //var mutex = std.Thread.Mutex{};
 
     var begin: usize = 0;
     var piece_blocks = std.mem.window(u8, piece_buf, k16, k16);
+    var count: usize = 0;
     while (piece_blocks.next()) |block| : (begin += k16) {
-        while (self.connections.items.len == 0) {}
-        mutex.lock();
-        const connection = self.connections.pop();
-        mutex.unlock();
-        try pool.spawn(downloadBlock, .{ self.allocator, connection, @as(i32, @intCast(index)), @as(i32, @intCast(begin)), @constCast(block), &mutex, &self.connections });
+        //while (self.connections.items.len == 0) {}
+        //mutex.lock();
+        //const connection = self.connections.pop();
+        //mutex.unlock();
+        //try pool.spawn(downloadBlock, .{ self.allocator, connection, @as(i32, @intCast(index)), @as(i32, @intCast(begin)), @constCast(block), &mutex, &self.connections });
+        const connection = self.connections.items[count % self.connections.items.len];
+        try downloadBlock(self.allocator, connection, @intCast(index), @intCast(begin), @constCast(block));
+
+        count += 1;
     }
 
-    pool.deinit();
+    //pool.deinit();
 
     var info_hash = std.crypto.hash.Sha1.init(.{});
     info_hash.update(piece_buf);
@@ -95,7 +100,7 @@ pub fn downloadPiece(self: *Self, index: usize, out: []const u8, full_block: ?[]
     }
 }
 
-fn downloadBlock(allocator: std.mem.Allocator, connection: std.net.Stream, index: i32, begin: i32, block_buf: []u8, mutex: *std.Thread.Mutex, connections: *std.ArrayList(std.net.Stream)) void {
+fn downloadBlock(allocator: std.mem.Allocator, connection: std.net.Stream, index: i32, begin: i32, block_buf: []u8) !void {
     std.debug.print("download block index={d} begin={d} len={d}\n", .{ index, begin, block_buf.len });
     const request = pee.PeerMessage.init(.request, .{ .request = .{ .index = index, .begin = begin, .length = @intCast(block_buf.len) } });
     request.send(connection) catch |e| {
@@ -113,11 +118,14 @@ fn downloadBlock(allocator: std.mem.Allocator, connection: std.net.Stream, index
     std.debug.assert(piece.payload.piece.block.len == block_buf.len);
 
     @memcpy(block_buf, piece.payload.piece.block);
-
-    mutex.lock();
-    connections.append(connection) catch unreachable;
-    mutex.unlock();
 }
+
+//fn downloadBlock(allocator: std.mem.Allocator, connection: std.net.Stream, index: i32, begin: i32, block_buf: []u8, mutex: *std.Thread.Mutex, connections: *std.ArrayList(std.net.Stream)) void {
+//    downloadBlock(allocator, connection, index, begin, block_buf) catch |e| {
+//        std.debug.print("failed receiving block: {}\n", .{e});
+//        unreachable;
+//    };
+//}
 
 fn discoverPeers(allocator: std.mem.Allocator, torrent: Torrent, peer_id: [20]u8) ![]std.net.Address {
     const query_params = try buildPeersQueryParams(allocator, torrent, peer_id);
