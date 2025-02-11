@@ -10,31 +10,40 @@ allocator: std.mem.Allocator,
 torrent: Torrent,
 peer_id: [20]u8,
 
-connections: std.ArrayList(std.net.Stream),
-peers: []std.net.Address,
+connections: std.ArrayList(std.net.Stream) = undefined,
+peers: []std.net.Address = undefined,
+
+called: bool = false,
 
 pub fn init(allocator: std.mem.Allocator, torrent: Torrent) !Self {
     const peer_id: [20]u8 = "-mab-ztorrent-001224".*;
-    const peers = try discoverPeers(allocator, torrent, peer_id);
-    errdefer allocator.free(peers);
-    var connections = std.ArrayList(std.net.Stream).init(allocator);
-    for (peers) |peer| {
-        const shake = try pee.handshake(torrent.info_hash, peer_id, peer);
-        try pee.initPeer(allocator, shake.connection);
-        try connections.append(shake.connection);
-    }
     return .{
         .allocator = allocator,
         .peer_id = peer_id,
         .torrent = torrent,
-        .connections = connections,
-        .peers = peers,
     };
 }
 
+pub fn call(self: *Self) !void {
+    self.peers = try discoverPeers(self.allocator, self.torrent, self.peer_id);
+    self.connections = std.ArrayList(std.net.Stream).init(self.allocator);
+    errdefer {
+        self.allocator.free(self.peers);
+        self.connections.deinit();
+    }
+    for (self.peers) |peer| {
+        const shake = try pee.handshake(self.torrent.info_hash, self.peer_id, peer);
+        try pee.initPeer(self.allocator, shake.connection);
+        try self.connections.append(shake.connection);
+    }
+    self.called = true;
+}
+
 pub fn deinit(self: Self) void {
-    self.allocator.free(self.peers);
-    self.connections.deinit();
+    if (self.called) {
+        self.allocator.free(self.peers);
+        self.connections.deinit();
+    }
 }
 
 pub fn download(self: *Self, out: []const u8) !void {

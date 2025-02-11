@@ -42,8 +42,9 @@ pub fn main() !void {
             const torrent = try tor.init(allocator, args[2]);
             defer torrent.deinit();
 
-            const client = try BitTorrentClient.init(allocator, torrent);
+            var client = try BitTorrentClient.init(allocator, torrent);
             defer client.deinit();
+            try client.call();
 
             for (client.peers) |p| {
                 try stdout.print("{any}\n", .{p});
@@ -77,6 +78,7 @@ pub fn main() !void {
 
             var client = try BitTorrentClient.init(arena_allocator, torrent);
             defer client.deinit();
+            try client.call();
 
             try client.downloadPiece(index, args[3], null);
         },
@@ -90,6 +92,7 @@ pub fn main() !void {
 
             var client = try BitTorrentClient.init(arena_allocator, torrent);
             defer client.deinit();
+            try client.call();
 
             try client.download(args[3]);
         },
